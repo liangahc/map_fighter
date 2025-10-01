@@ -1,0 +1,188 @@
+[gd_scene load_steps=2 format=3 uid="uid://bo8qbgvdeeulh"]
+
+[sub_resource type="GDScript" id="GDScript_h2yge"]
+script/source = "extends Area2D
+
+# 节点类型（用整数替代枚举，避免潜在问题）
+const TYPE_BASE = 0
+const TYPE_NORMAL = 1
+const TYPE_SPECIAL = 2
+
+# 基本属性
+var node_id: int = 0
+var type: int = TYPE_NORMAL
+var owner_id: int = 0
+var level: int = 1
+
+# 外观属性
+var base_radius: int = 12
+var star_radius: int = 8
+var border_gap: int = 4
+var border_width: int = 2
+
+# 存储图形子节点（方便动态更新）
+var fill_mesh: MeshInstance2D  # 填充圆
+var star_mesh: MeshInstance2D  # 五角星（基地用）
+var border_meshes: Array = []  # 边框集合（普通节点用）
+
+func _ready():
+	# 初始化图形节点（只执行一次）
+	_init_fill_circle()
+	_init_star()
+	_init_borders()
+	
+	# 更新图形状态（颜色、大小等）
+	update_visuals()
+	
+	print(\"节点 %d 初始化完成（使用Mesh方式）\" % node_id)
+
+# 初始化填充圆
+func _init_fill_circle():
+	fill_mesh = MeshInstance2D.new()
+	fill_mesh.name = \"fill_circle\"
+	add_child(fill_mesh)
+
+# 初始化五角星（基地专用）
+func _init_star():
+	star_mesh = MeshInstance2D.new()
+	star_mesh.name = \"star\"
+	star_mesh.visible = false  # 默认隐藏
+	add_child(star_mesh)
+
+# 初始化边框（根据等级动态创建）
+func _init_borders():
+	# 清除旧边框
+	for mesh in border_meshes:
+		mesh.queue_free()
+	border_meshes.clear()
+	
+	# 创建新边框
+	for i in range(level):
+		var border = MeshInstance2D.new()
+		border.name = \"border_%d\" % i
+		border_meshes.append(border)
+		add_child(border)
+
+# 更新所有视觉效果（核心方法）
+func update_visuals():
+	# 1. 更新填充圆
+	fill_mesh.mesh = create_circle_mesh(base_radius)
+	fill_mesh.material_override = create_color_material(_get_fill_color())
+	
+	# 2. 更新五角星（仅基地节点显示）
+	star_mesh.visible = (type == TYPE_BASE)
+	if type == TYPE_BASE:
+		star_mesh.mesh = create_star_mesh(star_radius)
+		star_mesh.material_override = create_color_material(_get_border_color())
+	
+	# 3. 更新边框（仅普通节点显示）
+	var is_normal = (type == TYPE_NORMAL)
+	for i in range(len(border_meshes)):
+		border_meshes[i].visible = is_normal
+		if is_normal:
+			var radius = base_radius + border_gap * (i + 1)
+			# 边框用空心圆（通过线框模式实现）
+			border_meshes[i].mesh = create_circle_mesh(radius, true)
+			border_meshes[i].material_override = create_color_material(_get_border_color())
+
+# 创建圆形网格（filled=true为填充圆，false为线框）
+func create_circle_mesh(radius: float, filled: bool = true) -> Mesh:
+	var mesh = Mesh.new()
+	var array = PackedVector2Array()
+	
+	# 生成圆形顶点（32个点足够平滑）
+	for i in range(32):
+		var angle = i * PI * 2 / 32
+		array.append(Vector2(cos(angle) * radius, sin(angle) * radius))
+	
+	# 填充圆需要中心顶点
+	if filled:
+		array.append(Vector2.ZERO)  # 中心点
+	
+	# 构建网格数据
+	var arr_mesh = ArrayMesh.new()
+	var surface_tool = SurfaceTool.new()
+	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLE_FAN if filled else Mesh.PRIMITIVE_LINE_LOOP)
+	for vec in array:
+		surface_tool.add_vertex(vec)
+	surface_tool.generate_normals()
+	arr_mesh = surface_tool.commit()
+	return arr_mesh
+
+# 创建五角星网格
+func create_star_mesh(radius: float) -> Mesh:
+	var points = PackedVector2Array()
+	var angle = PI / 2
+	var step = PI * 2 / 10
+	
+	for i in range(10):
+		var r = radius if i % 2 == 0 else radius * 0.5
+		points.append(Vector2(cos(angle) * r, sin(angle) * r))
+		angle += step
+	
+	# 构建五角星网格
+	var surface_tool = SurfaceTool.new()
+	surface_tool.begin(Mesh.PRIMITIVE_TRIANGLE_FAN)
+	surface_tool.add_vertex(Vector2.ZERO)  # 中心点
+	for vec in points:
+		surface_tool.add_vertex(vec)
+	surface_tool.generate_normals()
+	return surface_tool.commit()
+
+# 创建颜色材质
+func create_color_material(color: Color) -> Material:
+	var material = ShaderMaterial.new()
+	var shader = Shader.new()
+	# 简单的单色 shader
+	shader.code = \"\"\"
+	shader_type canvas_item;
+	uniform vec4 color : hint_color;
+	void fragment() {
+		COLOR = color;
+	}
+	\"\"\"
+	material.shader = shader
+	material.set_shader_parameter(\"color\", color)
+	return material
+
+# 颜色获取函数（与之前相同）
+func _get_fill_color() -> Color:
+	if owner_id == 1:
+		return Color(0.5, 0.8, 1)
+	elif owner_id == 2:
+		return Color(1, 0.5, 0.5)
+	return Color(0.8, 0.8, 0.8)
+
+func _get_border_color() -> Color:
+	if owner_id == 1:
+		return Color(0.2, 0.4, 1)
+	elif owner_id == 2:
+		return Color(1, 0.2, 0.2)
+	return Color(0.6, 0.6, 0.6)
+
+# 设置编号
+func set_id(new_id: int):
+	node_id = new_id
+
+# 当属性变化时调用（如等级、类型、所有者）
+func set_level(new_level: int):
+	level = new_level
+	_init_borders()  # 重新创建边框
+	update_visuals()
+
+func set_type(new_type: int):
+	type = new_type
+	update_visuals()
+
+func set_owner(new_owner: int):
+	owner_id = new_owner
+	update_visuals()
+
+func get_info() -> String:
+	return \"节点 %d (类型: %d, 所有者: %d, 等级: %d)\" % [node_id, type, owner_id, level]
+"
+
+[node name="Node" type="Area2D"]
+script = SubResource("GDScript_h2yge")
+
+[node name="Sprite2D" type="Sprite2D" parent="."]
