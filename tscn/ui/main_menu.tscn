@@ -1,0 +1,12 @@
+[gd_scene load_steps=3 format=3 uid="uid://q25ccfbu02f8"]
+
+[ext_resource type="Script" uid="uid://p4lv7gq7b4q1" path="res://tscn/ui/main_menu.gd" id="1_5bbvm"]
+[ext_resource type="Texture2D" uid="uid://ipmwvlployvk" path="res://pictures/game/backgrounds/title.png" id="2_nb2w3"]
+
+[node name="Main_menu" type="CanvasLayer"]
+script = ExtResource("1_5bbvm")
+
+[node name="Background" type="TextureRect" parent="."]
+offset_right = 40.0
+offset_bottom = 40.0
+texture = ExtResource("2_nb2w3")
